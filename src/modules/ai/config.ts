@@ -7,7 +7,8 @@ export type ProviderId =
   | "xai"
   | "cerebras"
   | "groq"
-  | "lmstudio";
+  | "lmstudio"
+  | "ollama";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -66,6 +67,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
+  },
+  {
+    id: "ollama",
+    label: "Ollama",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://ollama.com/download",
   },
 ] as const;
 
@@ -168,6 +176,13 @@ export const MODELS = [
     label: "LM Studio (local)",
     hint: "Custom local model",
   },
+  // Ollama (local; model id is user-supplied at runtime — pulled from `ollama list`)
+  {
+    id: "ollama-local",
+    provider: "ollama",
+    label: "Ollama (local)",
+    hint: "Local model — pick in Settings",
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];
@@ -197,6 +212,7 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gpt-oss-120b": 128_000,
   "openai/gpt-oss-20b": 128_000,
   "lmstudio-local": 32_000,
+  "ollama-local": 32_000,
 };
 
 export function getModelContextLimit(modelId: string | undefined): number {
@@ -205,19 +221,27 @@ export function getModelContextLimit(modelId: string | undefined): number {
 }
 
 /** Providers that do not require an API key (e.g. local servers). */
-export const KEYLESS_PROVIDERS: readonly ProviderId[] = ["lmstudio"] as const;
+export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
+  "lmstudio",
+  "ollama",
+] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {
   return !KEYLESS_PROVIDERS.includes(id);
 }
 
 /** Providers eligible for the editor's inline autocomplete (latency-critical). */
-export type AutocompleteProviderId = "cerebras" | "groq" | "lmstudio";
+export type AutocompleteProviderId =
+  | "cerebras"
+  | "groq"
+  | "lmstudio"
+  | "ollama";
 
 export const AUTOCOMPLETE_PROVIDERS: readonly AutocompleteProviderId[] = [
   "cerebras",
   "groq",
   "lmstudio",
+  "ollama",
 ] as const;
 
 export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
@@ -227,9 +251,11 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
   cerebras: "gpt-oss-120b",
   groq: "openai/gpt-oss-20b",
   lmstudio: "qwen2.5-coder-7b-instruct",
+  ollama: "qwen2.5-coder:7b",
 };
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
+export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
 

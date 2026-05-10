@@ -2,16 +2,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { AiDiffStatus } from "@/modules/tabs";
-import { presentableDiff, unifiedMergeView } from "@codemirror/merge";
-import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
 import { Cancel01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { useEffect, useMemo, useRef } from "react";
-import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
-import { resolveLanguage } from "./lib/languageResolver";
-import { EDITOR_THEME_EXT } from "./lib/themes";
+import { DiffEditor } from "@monaco-editor/react";
+import type * as MonacoNs from "monaco-editor";
+import { useEffect, useMemo, useState } from "react";
+import { ensureMonacoTheme, languageForPath } from "./lib/monacoSetup";
 
 type Props = {
   path: string;
@@ -22,47 +18,6 @@ type Props = {
   onAccept: () => void;
   onReject: () => void;
 };
-
-// Override default merge styles: replace the default 2px linear-gradient
-// underline with proper block backgrounds. Reads cleaner — especially for
-// pure insertions, where the underline-style marker looked decorative.
-const DIFF_THEME = EditorView.theme({
-  // ".cm-changedLine": {
-  //   backgroundColor:
-  //     "color-mix(in srgb, #22c55e 10%, transparent) !important",
-  // },
-  // ".cm-merge-b .cm-changedText, .cm-merge-b ins.cm-insertedLine": {
-  //   background:
-  //     "color-mix(in srgb, #22c55e 28%, transparent) !important",
-  //   textDecoration: "none !important",
-  //   borderRadius: "2px",
-  // },
-  // ".cm-deletedChunk": {
-  //   backgroundColor:
-  //     "color-mix(in srgb, #ef4444 8%, transparent)",
-  //   paddingLeft: "6px",
-  //   paddingTop: "1px",
-  //   paddingBottom: "1px",
-  // },
-  // ".cm-deletedChunk .cm-deletedText, .cm-deletedLine del": {
-  //   background:
-  //     "color-mix(in srgb, #ef4444 26%, transparent) !important",
-  //   textDecoration: "none !important",
-  //   borderRadius: "2px",
-  // },
-  // ".cm-changeGutter": {
-  //   width: "3px",
-  // },
-  // ".cm-changedLineGutter": {
-  //   backgroundColor: "#22c55e",
-  // },
-  // ".cm-deletedLineGutter": {
-  //   backgroundColor: "#ef4444",
-  // },
-  ".cm-changedText": {
-    background: "#88ff881a !important",
-  },
-});
 
 const STATUS_LABEL: Record<AiDiffStatus, string> = {
   pending: "Pending review",
@@ -88,52 +43,25 @@ export function AiDiffPane({
   onAccept,
   onReject,
 }: Props) {
-  const cmRef = useRef<ReactCodeMirrorRef>(null);
   const editorThemeId = usePreferencesStore((s) => s.editorTheme);
-  const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+  const [themeName, setThemeName] = useState<string>("vs-dark");
 
-  // The merge extension diffs the current document against `original`.
-  // We bake originalContent into the extension once on mount; if the AI
-  // updates its proposal, the surrounding bridge re-creates the tab.
-  const extensions = useMemo(
-    () => [
-      ...buildSharedExtensions(),
-      languageCompartment.of([]),
-      EditorState.readOnly.of(true),
-      EditorView.editable.of(false),
-      unifiedMergeView({
-        original: originalContent,
-        mergeControls: false,
-        highlightChanges: true,
-        gutter: true,
-        syntaxHighlightDeletions: true,
-        collapseUnchanged: { margin: 3, minSize: 6 },
-      }),
-      DIFF_THEME,
-    ],
-    [originalContent],
-  );
-
-  // Resolve language by path (same approach as EditorPane).
   useEffect(() => {
     let cancelled = false;
-    resolveLanguage(path).then((ext) => {
-      if (cancelled) return;
-      const view = cmRef.current?.view;
-      if (!view) return;
-      view.dispatch({
-        effects: languageCompartment.reconfigure(ext ?? []),
-      });
+    ensureMonacoTheme(editorThemeId).then((name) => {
+      if (!cancelled) setThemeName(name);
     });
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [editorThemeId]);
 
   const stats = useMemo(
     () => computeLineStats(originalContent, proposedContent),
     [originalContent, proposedContent],
   );
+
+  const language = useMemo(() => languageForPath(path), [path]);
 
   return (
     <div className="flex h-full min-h-0 flex-col rounded-md border border-border/60 bg-background">
@@ -190,21 +118,27 @@ export function AiDiffPane({
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        <CodeMirror
-          ref={cmRef}
-          value={proposedContent}
-          theme={themeExt}
-          extensions={extensions}
-          editable={false}
+        <DiffEditor
           height="100%"
-          className="h-full"
-          basicSetup={{
-            lineNumbers: true,
-            foldGutter: true,
-            highlightActiveLine: false,
-            highlightActiveLineGutter: false,
-            searchKeymap: true,
-          }}
+          theme={themeName}
+          language={language}
+          original={originalContent}
+          modified={proposedContent}
+          options={
+            {
+              readOnly: true,
+              renderSideBySide: false,
+              originalEditable: false,
+              fontFamily:
+                '"JetBrains Mono", SFMono-Regular, Menlo, monospace',
+              fontSize: 13,
+              lineHeight: 20,
+              minimap: { enabled: false },
+              automaticLayout: true,
+              renderOverviewRuler: false,
+              padding: { top: 8, bottom: 8 },
+            } as MonacoNs.editor.IDiffEditorConstructionOptions
+          }
         />
       </div>
     </div>
@@ -215,25 +149,39 @@ function computeLineStats(
   original: string,
   proposed: string,
 ): { added: number; removed: number } {
-  const changes = presentableDiff(original, proposed);
+  const a = original.split("\n");
+  const b = proposed.split("\n");
+  // Cheap LCS-based diff stat — accurate enough for the badge.
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    new Array(n + 1).fill(0),
+  );
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] =
+        a[i] === b[j]
+          ? dp[i + 1][j + 1] + 1
+          : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  let i = 0;
+  let j = 0;
   let added = 0;
   let removed = 0;
-  for (const c of changes) {
-    removed += countLines(original, c.fromA, c.toA);
-    added += countLines(proposed, c.fromB, c.toB);
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      removed++;
+      i++;
+    } else {
+      added++;
+      j++;
+    }
   }
+  removed += m - i;
+  added += n - j;
   return { added, removed };
-}
-
-function countLines(doc: string, from: number, to: number): number {
-  if (from === to) return 0;
-  const slice = doc.slice(from, to);
-  // A change spanning N newlines touches N+1 lines, but a trailing newline
-  // means the final segment is empty — don't count that as a touched line.
-  let n = 1;
-  for (let i = 0; i < slice.length; i++) {
-    if (slice.charCodeAt(i) === 10) n++;
-  }
-  if (slice.endsWith("\n")) n--;
-  return Math.max(n, 1);
 }

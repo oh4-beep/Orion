@@ -13,6 +13,7 @@ import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
   setAutostart,
+  setBugScannerEnabled,
   setEditorTheme,
   setRestoreWindowState,
   setVimMode,
@@ -47,6 +48,7 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const bugScannerEnabled = usePreferencesStore((s) => s.bugScannerEnabled);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -145,6 +147,15 @@ export function GeneralSection() {
           <Switch
             checked={vimMode}
             onCheckedChange={(v) => void setVimMode(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="AI bug scanner"
+          description="Continuously scan the active file for likely bugs (every 60s after edits) and surface them as red squiggles. Uses your selected chat model."
+        >
+          <Switch
+            checked={bugScannerEnabled}
+            onCheckedChange={(v) => void setBugScannerEnabled(v)}
           />
         </SettingRow>
       </div>

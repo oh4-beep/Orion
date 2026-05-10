@@ -35,8 +35,8 @@ export function StatusBar({
   const openPanel = useChatStore((s) => s.openPanel);
 
   return (
-    <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/60 px-3 text-[11px]">
-      <div className="min-w-0 flex-1 truncate">
+    <footer className="flex h-[22px] shrink-0 items-center justify-between gap-3 border-t border-[#007acc] bg-[#007acc] px-3 text-[11px] text-white">
+      <div className="min-w-0 flex-1 truncate text-white/90">
         <CwdBreadcrumb cwd={cwd} filePath={filePath} home={home} onCd={onCd} />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">

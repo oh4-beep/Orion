@@ -62,17 +62,34 @@ function titleFromUrl(url: string): string {
   }
 }
 
-export function useTabs(initial?: Partial<TerminalTab>) {
-  const [tabs, setTabs] = useState<Tab[]>([
-    {
-      id: 1,
-      kind: "terminal",
-      title: initial?.title ?? "shell",
-      cwd: initial?.cwd,
-    },
-  ]);
-  const [activeId, setActiveId] = useState(1);
-  const nextIdRef = useRef(2);
+export type InitialTabsState = {
+  tabs: Tab[];
+  activeId: number;
+  nextId: number;
+};
+
+export function useTabs(
+  initial?: Partial<TerminalTab>,
+  hydrate?: InitialTabsState | null,
+) {
+  const [tabs, setTabs] = useState<Tab[]>(() => {
+    if (hydrate && hydrate.tabs.length > 0) return hydrate.tabs;
+    // Start with no tabs so the host can render a welcome screen on first
+    // launch (or after the user closed every tab). The `initial` argument is
+    // intentionally retained for compatibility but ignored here.
+    void initial;
+    return [];
+  });
+  const [activeId, setActiveId] = useState(() => {
+    if (hydrate && hydrate.tabs.length > 0) {
+      const valid = hydrate.tabs.some((t) => t.id === hydrate.activeId);
+      return valid ? hydrate.activeId : hydrate.tabs[0].id;
+    }
+    return 0;
+  });
+  const nextIdRef = useRef(
+    hydrate && hydrate.tabs.length > 0 ? hydrate.nextId : 1,
+  );
 
   const newTab = useCallback((cwd?: string) => {
     const id = nextIdRef.current++;
@@ -223,10 +240,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [tabs],
   );
 
+  const getNextId = useCallback(() => nextIdRef.current, []);
+
   return {
     tabs,
     activeId,
     setActiveId,
+    getNextId,
     newTab,
     openFileTab,
     newPreviewTab,

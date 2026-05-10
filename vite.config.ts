@@ -46,11 +46,12 @@ export default defineConfig(async ({ mode }) => ({
 
           if (id.includes("/xterm/") || id.includes("@xterm/")) return "xterm";
           if (
-            id.includes("@codemirror/") ||
-            id.includes("@uiw/codemirror") ||
-            id.includes("@replit/codemirror")
+            id.includes("monaco-editor") ||
+            id.includes("@monaco-editor") ||
+            id.includes("monaco-vim") ||
+            id.includes("monaco-themes")
           )
-            return "codemirror";
+            return "monaco";
           if (id.includes("/streamdown/") || id.includes("@streamdown/"))
             return "streamdown";
           // Only the shiki core/engine in one chunk. Grammars and themes

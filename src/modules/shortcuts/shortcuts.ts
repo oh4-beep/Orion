@@ -11,6 +11,8 @@ export type ShortcutId =
   | "tab.new"
   | "tab.newPreview"
   | "tab.newEditor"
+  | "workspace.quickOpen"
+  | "workspace.commandPalette"
   | "tab.close"
   | "tab.next"
   | "tab.prev"
@@ -19,9 +21,16 @@ export type ShortcutId =
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
-  | "sidebar.toggle";
+  | "sidebar.toggle"
+  | "workspace.openFolder";
 
-export type ShortcutGroup = "General" | "Tabs" | "Search" | "AI" | "View";
+export type ShortcutGroup =
+  | "General"
+  | "Tabs"
+  | "Workspace"
+  | "Search"
+  | "AI"
+  | "View";
 
 export type Shortcut = {
   id: ShortcutId;
@@ -49,11 +58,25 @@ export const SHORTCUTS: Shortcut[] = [
     match: (e) => isMod(e) && e.key.toLowerCase() === "t",
   },
   {
+    id: "workspace.quickOpen",
+    label: "Quick open file",
+    keys: ["⌘", "P"],
+    group: "Workspace",
+    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "p",
+  },
+  {
+    id: "workspace.commandPalette",
+    label: "Command palette",
+    keys: ["⌘", "⇧", "P"],
+    group: "Workspace",
+    match: (e) => isMod(e) && e.shiftKey && e.key.toLowerCase() === "p",
+  },
+  {
     id: "tab.newPreview",
     label: "New preview tab",
-    keys: ["⌘", "P"],
+    keys: ["⌘", "⇧", "Y"],
     group: "Tabs",
-    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "p",
+    match: (e) => isMod(e) && e.shiftKey && e.key.toLowerCase() === "y",
   },
   {
     id: "tab.newEditor",
@@ -119,10 +142,18 @@ export const SHORTCUTS: Shortcut[] = [
     group: "View",
     match: (e) => isMod(e) && e.key.toLowerCase() === "b",
   },
+  {
+    id: "workspace.openFolder",
+    label: "Open folder…",
+    keys: ["⌘", "O"],
+    group: "Workspace",
+    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "o",
+  },
 ];
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
+  "Workspace",
   "Tabs",
   "View",
   "Search",

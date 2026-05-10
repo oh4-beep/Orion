@@ -9,3 +9,8 @@ export {
   type AiDiffStatus,
 } from "./lib/useTabs";
 export { useWorkspaceCwd } from "./lib/useWorkspaceCwd";
+export {
+  loadWorkspace,
+  saveWorkspace,
+  type PersistedWorkspace,
+} from "./lib/persistence";

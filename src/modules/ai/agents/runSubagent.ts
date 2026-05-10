@@ -16,6 +16,8 @@ type Args = {
   modelId: ModelId;
   toolContext: ToolContext;
   lmstudioBaseURL?: string;
+  ollamaBaseURL?: string;
+  ollamaChatModel?: string;
 };
 
 type RunResult = {
@@ -31,6 +33,8 @@ export async function runSubagent({
   modelId,
   toolContext,
   lmstudioBaseURL,
+  ollamaBaseURL,
+  ollamaChatModel,
 }: Args): Promise<RunResult> {
   const def = SUBAGENTS[type];
   if (!def) throw new Error(`unknown subagent type: ${type}`);
@@ -46,8 +50,14 @@ export async function runSubagent({
     if (t in readOnly) filtered[t] = readOnly[t];
   }
 
-  const model = await buildLanguageModel(getModel(modelId).provider, keys, getModel(modelId).id, {
+  const m = getModel(modelId);
+  const resolvedModelId =
+    m.provider === "ollama" && ollamaChatModel?.trim()
+      ? ollamaChatModel.trim()
+      : m.id;
+  const model = await buildLanguageModel(m.provider, keys, resolvedModelId, {
     lmstudioBaseURL,
+    ollamaBaseURL,
   });
 
   // The Agent constructor's tools generic infers `never` when passed a

@@ -14,6 +14,7 @@ import {
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
+import { getModel, providerNeedsKey } from "@/modules/ai/config";
 import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
@@ -24,7 +25,8 @@ import {
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
-import { FileExplorer } from "@/modules/explorer";
+import { applyChromeTheme } from "@/modules/editor/lib/applyChromeTheme";
+import { Sidebar } from "@/modules/sidebar";
 import {
   Header,
   type SearchInlineHandle,
@@ -33,17 +35,37 @@ import {
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { onKeysChanged } from "@/modules/settings/store";
 import {
   ShortcutsDialog,
   useGlobalShortcuts,
   type ShortcutHandlers,
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
-import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
+import {
+  loadWorkspace,
+  saveWorkspace,
+  useTabs,
+  useWorkspaceCwd,
+  type PersistedWorkspace,
+} from "@/modules/tabs";
 import { TerminalStack, type TerminalPaneHandle } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import {
+  CommandPalette,
+  pickAndOpenFolder,
+  QuickOpen,
+  useWorkspaceStore,
+  WelcomeScreen,
+  type PaletteCommand,
+} from "@/modules/workspace";
+import {
+  EDITOR_THEME_LABELS,
+  EDITOR_THEMES,
+  onKeysChanged,
+  setEditorTheme,
+  setVimMode,
+} from "@/modules/settings/store";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
@@ -60,11 +82,25 @@ function sameOrigin(a: string, b: string): boolean {
   }
 }
 
-export default function App() {
+function AppInner({ hydrated }: { hydrated: PersistedWorkspace | null }) {
+  const hydrateState = useMemo(() => {
+    if (!hydrated) return null;
+    const rehydratedTabs = hydrated.tabs.map((t) =>
+      t.kind === "editor"
+        ? { id: t.id, kind: "editor" as const, title: t.title, path: t.path, dirty: false }
+        : { id: t.id, kind: "terminal" as const, title: t.title, cwd: t.cwd },
+    );
+    return {
+      tabs: rehydratedTabs,
+      activeId: hydrated.activeId ?? rehydratedTabs[0]?.id ?? 1,
+      nextId: hydrated.nextId,
+    };
+  }, [hydrated]);
   const {
     tabs,
     activeId,
     setActiveId,
+    getNextId,
     newTab,
     openFileTab,
     newPreviewTab,
@@ -73,7 +109,18 @@ export default function App() {
     closeTab,
     updateTab,
     selectByIndex,
-  } = useTabs();
+  } = useTabs(undefined, hydrateState);
+
+  // Persist tab state with debounce. Only fires on real changes; LazyStore
+  // already throttles disk writes via its `autoSave` option but we add a
+  // small extra debounce to coalesce rapid edits (typing-induced dirty
+  // flips, etc.) — keeps this off the hot path.
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      void saveWorkspace({ tabs, activeId, nextId: getNextId() });
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [tabs, activeId, getNextId]);
 
   const searchAddons = useRef<Map<number, SearchAddon>>(new Map());
   const [activeSearchAddon, setActiveSearchAddon] =
@@ -103,8 +150,24 @@ export default function App() {
       .catch(() => setHome(null));
   }, []);
 
+  const workspaceRoot = useWorkspaceStore((s) => s.currentRoot);
+  const hydrateWorkspace = useWorkspaceStore((s) => s.hydrate);
+  useEffect(() => {
+    void hydrateWorkspace();
+  }, [hydrateWorkspace]);
+
+  const openFolderAndStart = useCallback(async () => {
+    const picked = await pickAndOpenFolder(workspaceRoot ?? home ?? undefined);
+    if (!picked) return;
+    // Open a fresh terminal rooted at the chosen folder so the user lands
+    // inside a usable workspace immediately.
+    newTab(picked);
+  }, [workspaceRoot, home, newTab]);
+
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
@@ -113,9 +176,15 @@ export default function App() {
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setApiKeys = useChatStore((s) => s.setApiKeys);
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
+  const selectedModelId = useChatStore((s) => s.selectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
-  const hasComposer = hasAnyKey(apiKeys);
+  // The chat composer should be available whenever there's a usable model:
+  // either an API key is configured for some hosted provider, OR the user has
+  // selected a keyless local provider (Ollama / LM Studio).
+  const selectedProvider = getModel(selectedModelId).provider;
+  const hasComposer =
+    hasAnyKey(apiKeys) || !providerNeedsKey(selectedProvider);
 
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
@@ -140,6 +209,13 @@ export default function App() {
   const initPrefs = usePreferencesStore((s) => s.init);
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
+  const editorThemeId = usePreferencesStore((s) => s.editorTheme);
+  // Apply the editor palette to the entire app chrome so the sidebar, header,
+  // borders, etc. don't clash with the editor surface.
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    applyChromeTheme(editorThemeId);
+  }, [editorThemeId, prefsHydrated]);
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);
@@ -147,6 +223,19 @@ export default function App() {
     if (!prefsHydrated) return;
     setSelectedModelId(prefDefaultModel);
   }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
+
+  // Auto-start the Ollama daemon if any selection points at it.
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    const prefs = usePreferencesStore.getState();
+    const usesOllama =
+      prefs.defaultModelId === "ollama-local" ||
+      prefs.autocompleteProvider === "ollama";
+    if (!usesOllama) return;
+    void import("@/modules/ai/lib/ollama").then(({ ensureOllamaRunning }) => {
+      void ensureOllamaRunning(prefs.ollamaBaseURL);
+    });
+  }, [prefsHydrated]);
 
   const hydrateSessions = useChatStore((s) => s.hydrateSessions);
   useEffect(() => {
@@ -180,11 +269,11 @@ export default function App() {
     }
   }, [tabs]);
 
-  const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
-    activeTab,
-    tabs,
-    home,
-  );
+  const { explorerRoot: derivedExplorerRoot, inheritedCwdForNewTab } =
+    useWorkspaceCwd(activeTab, tabs, home);
+  // The user-chosen workspace root (via ⌘O / welcome screen) takes precedence
+  // over whatever the active terminal's cwd happens to be.
+  const explorerRoot = workspaceRoot ?? derivedExplorerRoot;
 
   useEffect(() => {
     setActiveSearchAddon(searchAddons.current.get(activeId) ?? null);
@@ -365,8 +454,10 @@ export default function App() {
   }, [askFromSelection]);
 
   const openNewTab = useCallback(() => {
-    newTab(inheritedCwdForNewTab());
-  }, [newTab, inheritedCwdForNewTab]);
+    // Prefer the user-chosen workspace root if there is one; otherwise fall
+    // back to the active terminal's cwd / home.
+    newTab(workspaceRoot ?? inheritedCwdForNewTab());
+  }, [newTab, inheritedCwdForNewTab, workspaceRoot]);
 
   const sendCd = useCallback(
     (path: string) => {
@@ -451,6 +542,101 @@ export default function App() {
     [newPreviewTab],
   );
 
+  const paletteCommands = useMemo<PaletteCommand[]>(() => {
+    const cmds: PaletteCommand[] = [
+      {
+        id: "file.openFolder",
+        group: "File",
+        label: "Open folder…",
+        shortcut: ["⌘", "O"],
+        run: () => void openFolderAndStart(),
+      },
+      {
+        id: "file.newTerminal",
+        group: "File",
+        label: "New terminal",
+        shortcut: ["⌘", "T"],
+        run: openNewTab,
+      },
+      {
+        id: "file.newFile",
+        group: "File",
+        label: "New file",
+        shortcut: ["⌘", "E"],
+        run: () => setNewEditorOpen(true),
+      },
+      {
+        id: "file.quickOpen",
+        group: "File",
+        label: "Go to file…",
+        shortcut: ["⌘", "P"],
+        run: () => setQuickOpenOpen(true),
+      },
+      {
+        id: "view.toggleSidebar",
+        group: "View",
+        label: "Toggle sidebar",
+        shortcut: ["⌘", "B"],
+        run: toggleSidebar,
+      },
+      {
+        id: "view.shortcuts",
+        group: "View",
+        label: "Show keyboard shortcuts",
+        shortcut: ["⌘", "K"],
+        run: () => setShortcutsOpen(true),
+      },
+      {
+        id: "view.welcome",
+        group: "View",
+        label: "Show welcome screen",
+        run: () => {
+          for (const t of tabs) disposeTab(t.id);
+        },
+      },
+      {
+        id: "ai.toggle",
+        group: "AI",
+        label: "Toggle AI panel",
+        shortcut: ["⌘", "I"],
+        run: togglePanelAndFocus,
+      },
+      {
+        id: "settings.open",
+        group: "Settings",
+        label: "Open settings",
+        run: () => void openSettingsWindow(),
+      },
+      {
+        id: "settings.toggleVim",
+        group: "Settings",
+        label: "Toggle Vim mode",
+        run: () => {
+          const cur = usePreferencesStore.getState().vimMode;
+          void setVimMode(!cur);
+        },
+      },
+    ];
+    for (const id of EDITOR_THEMES) {
+      cmds.push({
+        id: `theme.${id}`,
+        group: "Theme",
+        label: `Set theme: ${EDITOR_THEME_LABELS[id]}`,
+        hint: id === editorThemeId ? "active" : undefined,
+        run: () => void setEditorTheme(id),
+      });
+    }
+    return cmds;
+  }, [
+    openFolderAndStart,
+    openNewTab,
+    toggleSidebar,
+    togglePanelAndFocus,
+    tabs,
+    disposeTab,
+    editorThemeId,
+  ]);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
@@ -465,6 +651,9 @@ export default function App() {
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
       "sidebar.toggle": toggleSidebar,
+      "workspace.openFolder": () => void openFolderAndStart(),
+      "workspace.quickOpen": () => setQuickOpenOpen(true),
+      "workspace.commandPalette": () => setPaletteOpen(true),
     }),
     [
       activeId,
@@ -476,6 +665,7 @@ export default function App() {
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
+      openFolderAndStart,
     ],
   );
 
@@ -604,16 +794,18 @@ export default function App() {
                 collapsible
                 collapsedSize={0}
               >
-                <div className="h-full border-r border-border/60 bg-card">
-                  <FileExplorer
-                    rootPath={explorerRoot}
-                    onOpenFile={handleOpenFile}
-                    onPathRenamed={handlePathRenamed}
-                    onPathDeleted={handlePathDeleted}
-                    onRevealInTerminal={cdInNewTab}
-                    onAttachToAgent={handleAttachFileToAgent}
-                  />
-                </div>
+                <Sidebar
+                  rootPath={explorerRoot}
+                  onOpenFile={handleOpenFile}
+                  onPathRenamed={handlePathRenamed}
+                  onPathDeleted={handlePathDeleted}
+                  onRevealInTerminal={cdInNewTab}
+                  onAttachToAgent={handleAttachFileToAgent}
+                  onOpenAi={togglePanelAndFocus}
+                  onShowWelcome={() => {
+                    for (const t of tabs) disposeTab(t.id);
+                  }}
+                />
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
@@ -678,6 +870,20 @@ export default function App() {
                         onReject={(id) => respondToApproval(id, false)}
                       />
                     </div>
+                    {tabs.length === 0 ? (
+                      <div className="absolute inset-0 z-10 bg-background">
+                        <WelcomeScreen
+                          onNewTerminal={openNewTab}
+                          onNewEditor={() => setNewEditorOpen(true)}
+                          onOpenSettings={() => void openSettingsWindow()}
+                          onOpenAi={togglePanelAndFocus}
+                          onFolderOpened={(path) => newTab(path)}
+                          defaultPickerPath={
+                            workspaceRoot ?? home ?? undefined
+                          }
+                        />
+                      </div>
+                    ) : null}
                   </div>
 
                   {keysLoaded ? (
@@ -744,6 +950,19 @@ export default function App() {
             onOpenChange={setShortcutsOpen}
           />
 
+          <QuickOpen
+            open={quickOpenOpen}
+            onOpenChange={setQuickOpenOpen}
+            rootPath={explorerRoot ?? home}
+            onPick={handleOpenFile}
+          />
+
+          <CommandPalette
+            open={paletteOpen}
+            onOpenChange={setPaletteOpen}
+            commands={paletteCommands}
+          />
+
           <NewEditorDialog
             open={newEditorOpen}
             onOpenChange={setNewEditorOpen}
@@ -763,4 +982,39 @@ export default function App() {
     return <AiComposerProvider>{shell}</AiComposerProvider>;
   }
   return shell;
+}
+
+export default function App() {
+  // Two-phase mount: load persisted tab state once before instantiating the
+  // app tree so `useTabs` can seed from it. `loaded === undefined` means
+  // still loading; `null` means no prior state (fresh install or empty).
+  const [loaded, setLoaded] = useState<PersistedWorkspace | null | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        await useWorkspaceStore.getState().hydrate();
+        // First launch with the welcome feature: throw away any persisted
+        // tabs from a previous version so the welcome screen actually shows
+        // (otherwise an old auto-spawned terminal tab masks it forever).
+        const isFirst =
+          await useWorkspaceStore.getState().consumeFirstLaunch();
+        if (isFirst) {
+          if (alive) setLoaded(null);
+          return;
+        }
+        const s = await loadWorkspace();
+        if (alive) setLoaded(s);
+      } catch {
+        if (alive) setLoaded(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (loaded === undefined) return null;
+  return <AppInner hydrated={loaded} />;
 }

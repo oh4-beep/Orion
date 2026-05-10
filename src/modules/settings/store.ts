@@ -4,6 +4,7 @@ import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   LMSTUDIO_DEFAULT_BASE_URL,
+  OLLAMA_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
@@ -11,29 +12,39 @@ import {
 export type ThemePref = "system" | "light" | "dark";
 
 export const EDITOR_THEMES = [
-  "atomone",
-  "aura",
-  "copilot",
+  "catppuccin-mocha",
+  "catppuccin-macchiato",
+  "catppuccin-frappe",
+  "catppuccin-latte",
+  "tokyo-night",
+  "dracula",
+  "rose-pine",
+  "one-dark-pro",
+  "nord",
+  "monokai",
+  "solarized-dark",
+  "solarized-light",
   "github-dark",
   "github-light",
-  "nord",
-  "tokyo-night",
-  "xcode-dark",
-  "xcode-light",
 ] as const;
 
 export type EditorThemeId = (typeof EDITOR_THEMES)[number];
 
 export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
-  atomone: "Atom One",
-  aura: "Aura",
-  copilot: "Copilot",
+  "catppuccin-mocha": "Catppuccin Mocha",
+  "catppuccin-macchiato": "Catppuccin Macchiato",
+  "catppuccin-frappe": "Catppuccin Frappé",
+  "catppuccin-latte": "Catppuccin Latte",
+  "tokyo-night": "Tokyo Night",
+  dracula: "Dracula",
+  "rose-pine": "Rosé Pine",
+  "one-dark-pro": "One Dark Pro",
+  nord: "Nord",
+  monokai: "Monokai",
+  "solarized-dark": "Solarized Dark",
+  "solarized-light": "Solarized Light",
   "github-dark": "GitHub Dark",
   "github-light": "GitHub Light",
-  nord: "Nord",
-  "tokyo-night": "Tokyo Night",
-  "xcode-dark": "Xcode Dark",
-  "xcode-light": "Xcode Light",
 };
 
 export type Preferences = {
@@ -47,7 +58,11 @@ export type Preferences = {
   autocompleteProvider: AutocompleteProviderId;
   autocompleteModelId: string;
   lmstudioBaseURL: string;
+  ollamaBaseURL: string;
+  /** Actual model name when chat picker is set to "ollama-local". */
+  ollamaChatModel: string;
   vimMode: boolean;
+  bugScannerEnabled: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -61,12 +76,15 @@ const KEY_AUTOCOMPLETE_ENABLED = "autocompleteEnabled";
 const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
+const KEY_OLLAMA_BASE_URL = "ollamaBaseURL";
+const KEY_OLLAMA_CHAT_MODEL = "ollamaChatModel";
 const KEY_VIM_MODE = "vimMode";
+const KEY_BUG_SCANNER_ENABLED = "bugScannerEnabled";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
   defaultModelId: DEFAULT_MODEL_ID,
-  editorTheme: "atomone",
+  editorTheme: "catppuccin-mocha",
   customInstructions: "",
   autostart: false,
   restoreWindowState: true,
@@ -74,7 +92,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteProvider: "cerebras",
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
+  ollamaBaseURL: OLLAMA_DEFAULT_BASE_URL,
+  ollamaChatModel: "",
   vimMode: false,
+  bugScannerEnabled: false,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -110,7 +131,15 @@ export async function loadPreferences(): Promise<Preferences> {
     lmstudioBaseURL:
       get<string>(KEY_LMSTUDIO_BASE_URL) ??
       DEFAULT_PREFERENCES.lmstudioBaseURL,
+    ollamaBaseURL:
+      get<string>(KEY_OLLAMA_BASE_URL) ?? DEFAULT_PREFERENCES.ollamaBaseURL,
+    ollamaChatModel:
+      get<string>(KEY_OLLAMA_CHAT_MODEL) ??
+      DEFAULT_PREFERENCES.ollamaChatModel,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    bugScannerEnabled:
+      get<boolean>(KEY_BUG_SCANNER_ENABLED) ??
+      DEFAULT_PREFERENCES.bugScannerEnabled,
   };
 }
 
@@ -166,8 +195,23 @@ export async function setLmstudioBaseURL(value: string): Promise<void> {
   await store.save();
 }
 
+export async function setOllamaBaseURL(value: string): Promise<void> {
+  await store.set(KEY_OLLAMA_BASE_URL, value);
+  await store.save();
+}
+
+export async function setOllamaChatModel(value: string): Promise<void> {
+  await store.set(KEY_OLLAMA_CHAT_MODEL, value);
+  await store.save();
+}
+
 export async function setVimMode(value: boolean): Promise<void> {
   await store.set(KEY_VIM_MODE, value);
+  await store.save();
+}
+
+export async function setBugScannerEnabled(value: boolean): Promise<void> {
+  await store.set(KEY_BUG_SCANNER_ENABLED, value);
   await store.save();
 }
 
@@ -188,7 +232,10 @@ export function onPreferencesChange(
     [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
+    [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
+    [KEY_OLLAMA_CHAT_MODEL]: "ollamaChatModel",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_BUG_SCANNER_ENABLED]: "bugScannerEnabled",
   };
   return store.onChange<unknown>((key, value) => {
     const mapped = map[key];

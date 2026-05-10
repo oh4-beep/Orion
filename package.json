@@ -1,5 +1,5 @@
 {
-  "name": "terax",
+  "name": "orion",
   "private": true,
   "version": "0.5.9",
   "type": "module",
@@ -38,6 +38,9 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@hugeicons/core-free-icons": "^4.1.1",
     "@hugeicons/react": "^1.1.6",
+    "@monaco-editor/react": "^4.7.0",
+    "monaco-editor": "^0.52.2",
+    "monaco-vim": "^0.4.2",
     "@iconify-json/catppuccin": "^1.2.17",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@replit/codemirror-vim": "^6.3.0",
