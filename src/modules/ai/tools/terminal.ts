@@ -7,7 +7,7 @@ export function buildTerminalTools(ctx: ToolContext) {
   return {
     suggest_command: tool({
       description:
-        "Type a single shell command into the user's active terminal at the prompt — WITHOUT executing it. Use this when the answer to the user's question IS a command (e.g. 'ffmpeg one-liner for X', 'git command to undo Y'). Prefer this over prose. Do NOT include a trailing newline.",
+        "Type a single shell command into the user's active terminal at the prompt — WITHOUT executing it. Use ONLY when the user explicitly asked for a command to run (e.g. 'ffmpeg one-liner for X', 'git command to undo Y', 'how do I install Z'). Do NOT use this to create or edit files — call write_file/edit instead. Do NOT use `touch`, `mkdir`, `echo >`, or `cat <<EOF` here as a workaround for creating files. No trailing newline.",
       inputSchema: z.object({
         command: z
           .string()
