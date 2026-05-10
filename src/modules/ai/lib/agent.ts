@@ -149,7 +149,11 @@ export async function buildLanguageModel(
       // the compat shim caused tool-capable models to emit raw JSON instead
       // of structured tool_calls.
       const { createOllama } = await import("ollama-ai-provider-v2");
-      const nativeURL = ollamaURL.replace(/\/v1\/?$/, "");
+      // ollama-ai-provider-v2 expects the baseURL to point at the Ollama
+      // native API root (`/api`). Our setting stores the OpenAI-compat URL
+      // (`…/v1`); strip `/v1` and append `/api`.
+      const root = ollamaURL.replace(/\/v1\/?$/, "").replace(/\/$/, "");
+      const nativeURL = `${root}/api`;
       built = createOllama({ baseURL: nativeURL })(resolvedModelId);
       break;
     }
