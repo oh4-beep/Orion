@@ -144,12 +144,13 @@ export async function buildLanguageModel(
       break;
     }
     case "ollama": {
-      const { createOpenAICompatible } = await import(
-        "@ai-sdk/openai-compatible"
-      );
-      built = createOpenAICompatible({ name: "ollama", baseURL: ollamaURL })(
-        resolvedModelId,
-      );
+      // Use the native Ollama provider (talks to /api/chat) instead of the
+      // OpenAI-compat shim. Native tool-calling round-trips properly here;
+      // the compat shim caused tool-capable models to emit raw JSON instead
+      // of structured tool_calls.
+      const { createOllama } = await import("ollama-ai-provider-v2");
+      const nativeURL = ollamaURL.replace(/\/v1\/?$/, "");
+      built = createOllama({ baseURL: nativeURL })(resolvedModelId);
       break;
     }
     default: {
