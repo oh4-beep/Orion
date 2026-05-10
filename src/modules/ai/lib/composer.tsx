@@ -295,6 +295,11 @@ export function AiComposerProvider({ children }: ProviderProps) {
     void chat.sendMessage({ role: "user", parts } as Parameters<
       typeof chat.sendMessage
     >[0]);
+    // Auto-reveal the bottom-right agent window so the user sees the response
+    // stream in even if they sent the message from the status-bar composer.
+    if (!useChatStore.getState().mini.open) {
+      useChatStore.getState().openMini();
+    }
     setValue("");
     setFiles([]);
     setPickedSnippets([]);

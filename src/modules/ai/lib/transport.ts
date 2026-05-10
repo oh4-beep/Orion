@@ -1,10 +1,50 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { DirectChatTransport } from "ai";
-import { TERMINAL_BUFFER_LINES, type ModelId } from "../config";
+import {
+  getModel,
+  OLLAMA_DEFAULT_BASE_URL,
+  TERMINAL_BUFFER_LINES,
+  type ModelId,
+} from "../config";
 import { createTeraxAgent } from "./agent";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
+import {
+  ensureOllamaRunning,
+  listOllamaModels,
+} from "./ollama";
 import type { ToolContext } from "../tools/tools";
+
+// Cache of "first available installed Ollama model" lookups keyed by base URL.
+// We only refresh if the cached pick is missing from a later listing.
+const ollamaAutoPickCache = new Map<string, string>();
+
+async function resolveOllamaModelOrThrow(
+  baseURL: string,
+  configured: string | undefined,
+): Promise<string> {
+  const ok = await ensureOllamaRunning(baseURL);
+  if (!ok) {
+    throw new Error(
+      "Ollama is not running and could not be auto-started. Install Ollama from https://ollama.com or start it manually.",
+    );
+  }
+  const trimmed = configured?.trim();
+  if (trimmed) return trimmed;
+
+  const cached = ollamaAutoPickCache.get(baseURL);
+  if (cached) return cached;
+
+  const installed = await listOllamaModels(baseURL);
+  if (installed.length === 0) {
+    throw new Error(
+      "No local Ollama models found. Run `ollama pull llama3.2` (or any model) and try again.",
+    );
+  }
+  const pick = installed[0].name;
+  ollamaAutoPickCache.set(baseURL, pick);
+  return pick;
+}
 
 const TERAX_MD_MAX_BYTES = 32 * 1024;
 type MemoryCacheEntry = { content: string | null; mtime: number };
@@ -65,16 +105,26 @@ export function createContextAwareTransport(deps: Deps) {
     }) {
       const live = deps.getLive();
       const projectMemory = await readTeraxMd(live.workspaceRoot);
+      const modelId = deps.getModelId();
+      const ollamaBaseURL =
+        deps.getOllamaBaseURL?.() ?? OLLAMA_DEFAULT_BASE_URL;
+      let ollamaChatModel = deps.getOllamaChatModel?.();
+      if (getModel(modelId).provider === "ollama") {
+        ollamaChatModel = await resolveOllamaModelOrThrow(
+          ollamaBaseURL,
+          ollamaChatModel,
+        );
+      }
       const agent = await createTeraxAgent({
         keys: deps.getKeys(),
-        modelId: deps.getModelId(),
+        modelId,
         customInstructions: deps.getCustomInstructions(),
         agentPersona: deps.getAgentPersona(),
         toolContext: deps.toolContext,
         onStep: deps.onStep,
         lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
-        ollamaBaseURL: deps.getOllamaBaseURL?.(),
-        ollamaChatModel: deps.getOllamaChatModel?.(),
+        ollamaBaseURL,
+        ollamaChatModel,
         planMode: deps.getPlanMode?.(),
         projectMemory,
       });
@@ -88,16 +138,26 @@ export function createContextAwareTransport(deps: Deps) {
     async reconnectToStream(options: unknown) {
       const live = deps.getLive();
       const projectMemory = await readTeraxMd(live.workspaceRoot);
+      const modelId = deps.getModelId();
+      const ollamaBaseURL =
+        deps.getOllamaBaseURL?.() ?? OLLAMA_DEFAULT_BASE_URL;
+      let ollamaChatModel = deps.getOllamaChatModel?.();
+      if (getModel(modelId).provider === "ollama") {
+        ollamaChatModel = await resolveOllamaModelOrThrow(
+          ollamaBaseURL,
+          ollamaChatModel,
+        );
+      }
       const agent = await createTeraxAgent({
         keys: deps.getKeys(),
-        modelId: deps.getModelId(),
+        modelId,
         customInstructions: deps.getCustomInstructions(),
         agentPersona: deps.getAgentPersona(),
         toolContext: deps.toolContext,
         onStep: deps.onStep,
         lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
-        ollamaBaseURL: deps.getOllamaBaseURL?.(),
-        ollamaChatModel: deps.getOllamaChatModel?.(),
+        ollamaBaseURL,
+        ollamaChatModel,
         planMode: deps.getPlanMode?.(),
         projectMemory,
       });
