@@ -50,7 +50,6 @@ import {
 } from "@/modules/tabs";
 import { TerminalStack, type TerminalPaneHandle } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
-import { UpdaterDialog } from "@/modules/updater";
 import {
   CommandPalette,
   pickAndOpenFolder,
@@ -970,7 +969,6 @@ function AppInner({ hydrated }: { hydrated: PersistedWorkspace | null }) {
             onCreated={(path) => openFileTab(path)}
           />
 
-          <UpdaterDialog />
         </div>
       </TooltipProvider>
     </ThemeProvider>
